@@ -49,8 +49,8 @@ export const api = {
   completeOrder: (id) => request(`/dashboard/orders/${id}/complete`, { method: 'POST' }),
   cancelDashboardOrder: (id) => request(`/dashboard/orders/${id}/cancel`, { method: 'POST' }),
 
-  uploadImage: async (formData) => {
-    const res = await fetch('/api/dashboard/upload', {
+  uploadImage: async (formData) => {``
+    const res = await fetch(`${API_BASE}/dashboard/upload`, {
       method: 'POST',
       credentials: 'include',
       body: formData,
