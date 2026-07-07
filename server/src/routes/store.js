@@ -6,7 +6,15 @@ import config from '../config.js';
 
 const router = Router();
 
-async function isStoreOpen(storeId) {
+async function isStoreOpen(storeId, storeStatus = 'open') {
+  // Manual status overrides business hours
+  if (storeStatus === 'closed') {
+    return { open: false, hours: [], storeStatusLabel: 'closed' };
+  }
+  if (storeStatus === 'temporarily_closed') {
+    return { open: false, hours: [], storeStatusLabel: 'temporarily_closed' };
+  }
+
   const { rows } = await pool.query(
     'SELECT day_of_week, open_time, close_time, is_closed FROM business_hours WHERE store_id = $1',
     [storeId]
@@ -23,18 +31,19 @@ async function isStoreOpen(storeId) {
 
   const today = rows.find(r => r.day_of_week === currentDay);
   if (!today || today.is_closed) {
-    return { open: false, hours: rows };
+    return { open: false, hours: rows, storeStatusLabel: null };
   }
 
   const open = currentTime >= today.open_time.slice(0, 5) && currentTime <= today.close_time.slice(0, 5);
-  return { open, hours: rows };
+  return { open, hours: rows, storeStatusLabel: null };
 }
 
 router.get('/:slug', async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT id, store_name, slug, whatsapp_number, allow_delivery, allow_pickup,
-              delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions
+              delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions,
+              store_status
        FROM stores WHERE slug = $1`,
       [req.params.slug]
     );
@@ -44,7 +53,7 @@ router.get('/:slug', async (req, res, next) => {
     }
 
     const s = result.rows[0];
-    const storeStatus = await isStoreOpen(s.id);
+    const statusInfo = await isStoreOpen(s.id, s.store_status || 'open');
 
     res.json({
       store: {
@@ -58,8 +67,10 @@ router.get('/:slug', async (req, res, next) => {
         freeDeliveryThreshold: s.free_delivery_threshold ? parseFloat(s.free_delivery_threshold) : null,
         pickupAddress: s.pickup_address,
         pickupInstructions: s.pickup_instructions,
-        isOpen: storeStatus.open,
-        businessHours: storeStatus.hours.map(h => ({
+        storeStatus: s.store_status || 'open',
+        isOpen: statusInfo.open,
+        storeStatusLabel: statusInfo.storeStatusLabel,
+        businessHours: statusInfo.hours.map(h => ({
           dayOfWeek: h.day_of_week,
           openTime: h.open_time,
           closeTime: h.close_time,
@@ -86,9 +97,9 @@ router.get('/:slug/products', async (req, res, next) => {
     const storeId = storeResult.rows[0].id;
 
     const result = await pool.query(
-      `SELECT id, name, price, description, is_available, image_url
+      `SELECT id, name, price, description, is_available, image_url, category_id
        FROM products WHERE store_id = $1
-       ORDER BY created_at ASC`,
+       ORDER BY sort_order ASC, created_at ASC`,
       [storeId]
     );
 
@@ -100,6 +111,35 @@ router.get('/:slug/products', async (req, res, next) => {
         description: p.description,
         isAvailable: p.is_available,
         imageUrl: p.image_url,
+        categoryId: p.category_id,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:slug/categories', async (req, res, next) => {
+  try {
+    const storeResult = await pool.query(
+      'SELECT id FROM stores WHERE slug = $1',
+      [req.params.slug]
+    );
+
+    if (storeResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, name FROM categories WHERE store_id = $1
+       ORDER BY sort_order ASC, name ASC`,
+      [storeResult.rows[0].id]
+    );
+
+    res.json({
+      categories: result.rows.map(c => ({
+        id: c.id,
+        name: c.name,
       })),
     });
   } catch (err) {
@@ -112,7 +152,7 @@ router.post('/:slug/orders', validateCheckoutInput, orderRateLimit, async (req, 
   try {
     const storeResult = await pool.query(
       `SELECT id, store_name, slug, whatsapp_number, delivery_fee, free_delivery_threshold,
-              allow_delivery, allow_pickup
+              allow_delivery, allow_pickup, store_status
        FROM stores WHERE slug = $1`,
       [req.params.slug]
     );
@@ -123,7 +163,7 @@ router.post('/:slug/orders', validateCheckoutInput, orderRateLimit, async (req, 
 
     const store = storeResult.rows[0];
 
-    const storeStatus = await isStoreOpen(store.id);
+    const storeStatus = await isStoreOpen(store.id, store.store_status || 'open');
     if (!storeStatus.open) {
       return res.status(400).json({ error: 'Store is currently closed. Please check business hours and try again.' });
     }

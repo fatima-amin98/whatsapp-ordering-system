@@ -37,6 +37,43 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Compress and resize an image before upload.
+ * Max dimension: 1200px, output: WebP at 80% quality.
+ */
+async function compressImage(file) {
+  if (file.type === 'image/webp' && file.size < 512 * 1024) return file;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX_DIM = 1200;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(file); return; }
+        const optimized = new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), {
+          type: 'image/webp',
+          lastModified: Date.now(),
+        });
+        resolve(optimized);
+      }, 'image/webp', 0.8);
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 export default function ImageUploader({ currentImageUrl, onImageUrlChange, error }) {
   const [mode, setMode] = useState(currentImageUrl ? 'existing' : 'upload');
   const [previewUrl, setPreviewUrl] = useState(currentImageUrl || null);
@@ -79,8 +116,10 @@ export default function ImageUploader({ currentImageUrl, onImageUrlChange, error
     setUploading(true);
 
     try {
+      // Compress and resize before upload
+      const compressed = await compressImage(file);
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('image', compressed);
       const result = await api.uploadImage(formData);
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(result.imageUrl);

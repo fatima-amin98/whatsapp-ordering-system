@@ -144,22 +144,93 @@ export default function DashboardHome() {
       <audio ref={audioRef} src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACAgICAf39/f39/f3+AgICAgeHh4eHh4eHh4eHh4eHh4Q==" preload="auto" />
 
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="bg-white rounded-lg border p-3">
-            <p className="text-xs text-gray-500">Pending</p>
-            <p className="text-2xl font-bold text-blue-600">{stats.pending_count || 0}</p>
+        <div>
+          {/* Section: Order Pipeline — most actionable metrics */}
+          <div className="mb-3">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Order Pipeline</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <p className="text-xs font-medium text-gray-500">Pending</p>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{stats.pending_count || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" />
+                  <p className="text-xs font-medium text-gray-500">Awaiting Conf.</p>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{stats.awaiting_confirmation_count || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <p className="text-xs font-medium text-gray-500">Accepted</p>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{stats.accepted_count || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <p className="text-xs font-medium text-gray-500">Revenue Today</p>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">PKR {Number(stats.revenue_today || 0).toLocaleString()}</p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg border p-3">
-            <p className="text-xs text-gray-500">Today</p>
-            <p className="text-2xl font-bold text-gray-800">{stats.last_24h_count || 0}</p>
+
+          {/* Section: Time-based metrics */}
+          <div className="mb-3">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Period Overview</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Orders Today</p>
+                <p className="text-xl font-bold text-gray-900">{stats.orders_today || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Orders This Week</p>
+                <p className="text-xl font-bold text-gray-900">{stats.orders_this_week || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Revenue This Week</p>
+                <p className="text-xl font-bold text-gray-900">PKR {Number(stats.revenue_this_week || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Total Revenue</p>
+                <p className="text-xl font-bold text-gray-900">PKR {Number(stats.total_revenue || 0).toLocaleString()}</p>
+              </div>
+            </div>
           </div>
-          <div className="bg-white rounded-lg border p-3">
-            <p className="text-xs text-gray-500">Revenue</p>
-            <p className="text-2xl font-bold text-green-600">PKR {Number(stats.total_revenue || 0).toLocaleString()}</p>
-          </div>
-          <div className="bg-white rounded-lg border p-3">
-            <p className="text-xs text-gray-500">Unconfirmed</p>
-            <p className="text-2xl font-bold text-yellow-600">{stats.unconfirmed_count || 0}</p>
+
+          {/* Section: Completed + Cancelled + Trends */}
+          <div className="mb-6">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Performance</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Completed</p>
+                <p className="text-xl font-bold text-green-600">{stats.completed_count || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Cancelled</p>
+                <p className="text-xl font-bold text-red-500">{stats.cancelled_count || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Avg. Order Value</p>
+                <p className="text-xl font-bold text-gray-900">
+                  PKR {Number(stats.average_order_value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500 mb-1">Best Seller</p>
+                <p className="text-base font-bold text-gray-900 truncate" title={stats.best_selling_product?.name || 'N/A'}>
+                  {stats.best_selling_product?.name || 'N/A'}
+                </p>
+                {stats.best_selling_product && (
+                  <p className="text-xs text-gray-400 mt-0.5">{stats.best_selling_product.totalSold} sold</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

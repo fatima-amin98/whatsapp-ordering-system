@@ -1,13 +1,102 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import pool from '../db/pool.js';
-import { signJwt } from '../utils/jwt.js';
+import { signJwt, verifyJwt } from '../utils/jwt.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateRegisterInput } from '../middleware/validate.js';
 import { checkRateLimit } from '../middleware/rateLimit.js';
+import { generateOtp, storeOtp, verifyOtp, hasActiveOtp } from '../services/otpService.js';
+import { sendOtp } from '../services/smsProvider.js';
+import { generateQrDataUrl } from '../utils/qrCode.js';
 import config from '../config.js';
 
 const router = Router();
+
+// ─── OTP: Send verification code ───────────────────────────────────
+router.post('/send-otp', async (req, res, next) => {
+  try {
+    const { allowed, retryAfter } = checkRateLimit(
+      `send-otp:${req.ip}`,
+      config.rateLimit.registerMaxAttempts,
+      config.rateLimit.registerWindowMs
+    );
+    if (!allowed) {
+      return res.status(429).json({
+        error: `Too many requests. Try again in ${Math.ceil(retryAfter / 60)} minutes.`,
+      });
+    }
+
+    const { phone } = req.body;
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+
+    const { validatePhone } = await import('../utils/phoneUtils.js');
+    const phoneCheck = validatePhone(phone);
+    if (!phoneCheck.valid) {
+      return res.status(400).json({ error: phoneCheck.error });
+    }
+
+    // Prevent flooding: only one active OTP at a time per phone
+    if (hasActiveOtp(phoneCheck.normalized)) {
+      return res.status(429).json({ error: 'An active OTP already exists. Please wait before requesting a new one.' });
+    }
+
+    const otp = generateOtp();
+    await storeOtp(phoneCheck.normalized, otp);
+
+    // Send via the configured provider
+    const result = await sendOtp(phoneCheck.normalized, otp);
+
+    res.json({
+      message: 'Verification code sent',
+      method: result.method,
+      expiresIn: 300,
+      // In development, include the OTP for convenience
+      ...(config.isProduction ? {} : { devOtp: otp }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── OTP: Verify code ──────────────────────────────────────────────
+router.post('/verify-otp', async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+    if (!otp || typeof otp !== 'string' || otp.length !== 6) {
+      return res.status(400).json({ error: 'A valid 6-digit verification code is required' });
+    }
+
+    const { validatePhone } = await import('../utils/phoneUtils.js');
+    const phoneCheck = validatePhone(phone);
+    if (!phoneCheck.valid) {
+      return res.status(400).json({ error: phoneCheck.error });
+    }
+
+    const result = await verifyOtp(phoneCheck.normalized, otp);
+    if (!result.valid) {
+      return res.status(400).json({ error: result.reason });
+    }
+
+    // Issue a short-lived verification token (5 min)
+    const verificationToken = signJwt({
+      purpose: 'phone-verification',
+      phone: phoneCheck.normalized,
+    });
+
+    res.json({
+      verified: true,
+      verificationToken,
+      expiresIn: 300,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.post('/register', validateRegisterInput, async (req, res, next) => {
   try {
@@ -22,7 +111,31 @@ router.post('/register', validateRegisterInput, async (req, res, next) => {
       });
     }
 
-    const { storeName, slug, whatsappNumber, password } = req.cleanInput;
+    const { storeName, slug, whatsappNumber, password, verificationToken } = req.cleanInput;
+
+    // Verify the phone verification token
+    if (!verificationToken) {
+      return res.status(400).json({ error: 'Phone verification is required. Please verify your number first.' });
+    }
+
+    const tokenPayload = verifyJwt(verificationToken);
+    if (!tokenPayload || tokenPayload.purpose !== 'phone-verification') {
+      return res.status(400).json({ error: 'Invalid or expired verification token. Please verify your number again.' });
+    }
+
+    // Ensure the verified phone matches the submitted phone
+    if (tokenPayload.phone !== whatsappNumber) {
+      return res.status(400).json({ error: 'Phone number mismatch. Please verify the correct number.' });
+    }
+
+    // Check store limit: max 3 stores per phone number
+    const storeCount = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM stores WHERE whatsapp_number = $1',
+      [whatsappNumber]
+    );
+    if (storeCount.rows[0].count >= 3) {
+      return res.status(409).json({ error: 'This phone number already has the maximum of 3 stores.' });
+    }
 
     const existing = await pool.query(
       'SELECT id FROM stores WHERE slug = $1',
@@ -32,14 +145,7 @@ router.post('/register', validateRegisterInput, async (req, res, next) => {
       return res.status(409).json({ error: 'This store URL slug is already taken' });
     }
 
-    const existingPhone = await pool.query(
-      'SELECT id FROM stores WHERE whatsapp_number = $1',
-      [whatsappNumber]
-    );
-    if (existingPhone.rows.length > 0) {
-      return res.status(409).json({ error: 'A store with this WhatsApp number already exists' });
-    }
-
+    // Note: we no longer reject duplicate phones — allow up to 3 stores
     const passwordHash = await bcrypt.hash(password, config.bcryptSaltRounds);
 
     const result = await pool.query(
@@ -71,8 +177,21 @@ router.post('/register', validateRegisterInput, async (req, res, next) => {
       path: '/',
     });
 
+    const appUrl = config.frontendUrl.replace(/\/$/, '');
+    const storeUrl = `${appUrl}/store/${store.slug}`;
+
+    // Generate QR code for the onboarding page
+    let qrCode = null;
+    try {
+      qrCode = await generateQrDataUrl(storeUrl);
+    } catch {
+      // QR is non-critical
+    }
+
     res.status(201).json({
       store: { id: store.id, storeName: store.store_name, slug: store.slug },
+      storeUrl,
+      qrCode,
     });
   } catch (err) {
     next(err);
@@ -125,8 +244,12 @@ router.post('/login', async (req, res, next) => {
       path: '/',
     });
 
+    const appUrl = config.frontendUrl.replace(/\/$/, '');
+    const storeUrl = `${appUrl}/store/${store.slug}`;
+
     res.json({
       store: { id: store.id, storeName: store.store_name, slug: store.slug },
+      storeUrl,
     });
   } catch (err) {
     next(err);

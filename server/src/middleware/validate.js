@@ -72,7 +72,7 @@ export function validateCheckoutInput(req, res, next) {
 }
 
 export function validateProductInput(req, res, next) {
-  const { name, price, description, imageUrl } = req.body;
+  const { name, price, description, imageUrl, categoryId } = req.body;
   const errors = [];
 
   if (!name || typeof name !== 'string' || name.trim().length < 1) {
@@ -107,13 +107,14 @@ export function validateProductInput(req, res, next) {
     price: Math.round(parseFloat(price) * 100) / 100,
     description: description ? description.trim().slice(0, MAX_STRING_LENGTH) : null,
     imageUrl: imageUrl && imageUrl.trim() ? imageUrl.trim() : null,
+    categoryId: categoryId && typeof categoryId === 'string' ? categoryId : null,
   };
 
   next();
 }
 
 export function validateStoreSettings(req, res, next) {
-  const { storeName, whatsappNumber, allowDelivery, allowPickup, deliveryFee, freeDeliveryThreshold, pickupAddress, pickupInstructions } = req.body;
+  const { storeName, whatsappNumber, allowDelivery, allowPickup, deliveryFee, freeDeliveryThreshold, pickupAddress, pickupInstructions, storeStatus } = req.body;
   const errors = [];
 
   if (storeName !== undefined) {
@@ -141,6 +142,10 @@ export function validateStoreSettings(req, res, next) {
     errors.push({ field: 'allowDelivery', message: 'At least one fulfillment method must be enabled' });
   }
 
+  if (storeStatus !== undefined && !["open", "temporarily_closed", "closed"].includes(storeStatus)) {
+    errors.push({ field: "storeStatus", message: "Store status must be open, temporarily_closed, or closed" });
+  }
+
   if (pickupAddress && pickupAddress.length > 1000) {
     errors.push({ field: 'pickupAddress', message: 'Address must be under 1000 characters' });
   }
@@ -158,6 +163,7 @@ export function validateStoreSettings(req, res, next) {
   if (freeDeliveryThreshold !== undefined) req.cleanInput.freeDeliveryThreshold = freeDeliveryThreshold !== null ? Math.round(parseFloat(freeDeliveryThreshold) * 100) / 100 : null;
   if (pickupAddress !== undefined) req.cleanInput.pickupAddress = pickupAddress.trim().slice(0, 1000);
   if (pickupInstructions !== undefined) req.cleanInput.pickupInstructions = pickupInstructions.trim().slice(0, MAX_STRING_LENGTH);
+  if (storeStatus !== undefined) req.cleanInput.storeStatus = storeStatus;
 
   next();
 }
@@ -201,7 +207,7 @@ export function validateBusinessHours(req, res, next) {
 }
 
 export function validateRegisterInput(req, res, next) {
-  const { storeName, slug, whatsappNumber, password } = req.body;
+  const { storeName, slug, whatsappNumber, password, verificationToken } = req.body;
   const errors = [];
 
   if (!storeName || typeof storeName !== 'string' || storeName.trim().length < 1 || storeName.length > 100) {
@@ -240,6 +246,7 @@ export function validateRegisterInput(req, res, next) {
     slug: slug.toLowerCase().replace(/[^a-z0-9-]/g, ''),
     whatsappNumber: normalizedPhone,
     password,
+    verificationToken,
   };
 
   next();

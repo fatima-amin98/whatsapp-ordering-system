@@ -29,6 +29,7 @@ export default function StoreSettings() {
         freeDeliveryThreshold: data.settings.freeDeliveryThreshold ? String(data.settings.freeDeliveryThreshold) : '',
         pickupAddress: data.settings.pickupAddress || '',
         pickupInstructions: data.settings.pickupInstructions || '',
+        storeStatus: data.settings.storeStatus || 'open',
       });
     } catch (err) {
       setError(err.message || 'Failed to load settings');
@@ -60,6 +61,7 @@ export default function StoreSettings() {
         ...form,
         deliveryFee: parseFloat(form.deliveryFee) || 0,
         freeDeliveryThreshold: form.freeDeliveryThreshold ? parseFloat(form.freeDeliveryThreshold) : null,
+        storeStatus: form.storeStatus || 'open',
       };
       const data = await api.updateSettings(body);
       setSettings(data.settings);
@@ -206,6 +208,22 @@ export default function StoreSettings() {
             rows="2"
             placeholder="Shown to customers on the store page"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Store Status</label>
+          <select
+            value={form.storeStatus}
+            onChange={(e) => setForm({ ...form, storeStatus: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="open">Open - accepting orders</option>
+            <option value="temporarily_closed">Temporarily Closed</option>
+            <option value="closed">Closed</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            Business hours still apply when status is Open.
+          </p>
         </div>
 
         <button

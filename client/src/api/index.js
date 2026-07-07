@@ -30,10 +30,13 @@ export const api = {
   login: (body) => request('/auth/login', { method: 'POST', body }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
+  sendOtp: (body) => request('/auth/send-otp', { method: 'POST', body }),
+  verifyOtp: (body) => request('/auth/verify-otp', { method: 'POST', body }),
 
   // Store (public)
   getStore: (slug) => request(`/store/${slug}`),
   getStoreProducts: (slug) => request(`/store/${slug}/products`),
+  getStoreCategories: (slug) => request(`/store/${slug}/categories`),
   createOrder: (slug, body) => request(`/store/${slug}/orders`, { method: 'POST', body }),
 
   // Orders (public - token based)
@@ -65,11 +68,18 @@ export const api = {
     return data;
   },
 
-  getProducts: () => request('/dashboard/products'),
+  getProducts: (search) => request(`/dashboard/products${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   createProduct: (body) => request('/dashboard/products', { method: 'POST', body }),
   updateProduct: (id, body) => request(`/dashboard/products/${id}`, { method: 'PUT', body }),
   toggleProduct: (id) => request(`/dashboard/products/${id}/toggle`, { method: 'PATCH' }),
   deleteProduct: (id) => request(`/dashboard/products/${id}`, { method: 'DELETE' }),
+  duplicateProduct: (id) => request(`/dashboard/products/${id}/duplicate`, { method: 'POST' }),
+  reorderProducts: (productIds) => request('/dashboard/products/reorder', { method: 'PUT', body: { productIds } }),
+
+  getCategories: () => request('/dashboard/categories'),
+  createCategory: (body) => request('/dashboard/categories', { method: 'POST', body }),
+  updateCategory: (id, body) => request(`/dashboard/categories/${id}`, { method: 'PUT', body }),
+  deleteCategory: (id) => request(`/dashboard/categories/${id}`, { method: 'DELETE' }),
 
   getSettings: () => request('/dashboard/settings'),
   updateSettings: (body) => request('/dashboard/settings', { method: 'PUT', body }),

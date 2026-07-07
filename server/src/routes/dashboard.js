@@ -331,12 +331,20 @@ router.post('/upload', (req, res, next) => {
 router.get('/products', async (req, res, next) => {
   try {
     const storeId = buildStoreIdCondition(req);
-    const result = await pool.query(
-      `SELECT id, name, price, description, is_available, image_url
-       FROM products WHERE store_id = $1
-       ORDER BY created_at ASC`,
-      [storeId]
-    );
+    const { search } = req.query;
+
+    let sql = `SELECT id, name, price, description, is_available, image_url, category_id, sort_order
+               FROM products WHERE store_id = $1`;
+    const params = [storeId];
+
+    if (search && typeof search === 'string' && search.trim()) {
+      sql += ` AND name ILIKE $2`;
+      params.push(`%${search.trim()}%`);
+    }
+
+    sql += ` ORDER BY sort_order ASC, created_at ASC`;
+
+    const result = await pool.query(sql, params);
 
     res.json({
       products: result.rows.map(p => ({
@@ -346,6 +354,8 @@ router.get('/products', async (req, res, next) => {
         description: p.description,
         isAvailable: p.is_available,
         imageUrl: p.image_url,
+        categoryId: p.category_id,
+        sortOrder: p.sort_order,
       })),
     });
   } catch (err) {
@@ -356,13 +366,19 @@ router.get('/products', async (req, res, next) => {
 router.post('/products', validateProductInput, async (req, res, next) => {
   try {
     const storeId = buildStoreIdCondition(req);
-    const { name, price, description, imageUrl } = req.cleanInput;
+    const { name, price, description, imageUrl, categoryId } = req.cleanInput;
+
+    // Determine sort_order: place after the last product in the same category
+    const lastOrder = await pool.query(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM products WHERE store_id = $1`,
+      [storeId]
+    );
 
     const result = await pool.query(
-      `INSERT INTO products (store_id, name, price, description, image_url)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, price, description, is_available, image_url`,
-      [storeId, name, price, description, imageUrl]
+      `INSERT INTO products (store_id, name, price, description, image_url, category_id, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, name, price, description, is_available, image_url, category_id, sort_order`,
+      [storeId, name, price, description, imageUrl, categoryId, lastOrder.rows[0].next_order]
     );
 
     const p = result.rows[0];
@@ -374,6 +390,8 @@ router.post('/products', validateProductInput, async (req, res, next) => {
         description: p.description,
         isAvailable: p.is_available,
         imageUrl: p.image_url,
+        categoryId: p.category_id,
+        sortOrder: p.sort_order,
       },
     });
   } catch (err) {
@@ -385,14 +403,14 @@ router.put('/products/:productId', validateProductInput, async (req, res, next) 
   try {
     const storeId = buildStoreIdCondition(req);
     const { productId } = req.params;
-    const { name, price, description, imageUrl } = req.cleanInput;
+    const { name, price, description, imageUrl, categoryId } = req.cleanInput;
 
     const result = await pool.query(
       `UPDATE products
-       SET name = $1, price = $2, description = $3, image_url = $4
-       WHERE id = $5 AND store_id = $6
-       RETURNING id, name, price, description, is_available, image_url`,
-      [name, price, description, imageUrl, productId, storeId]
+       SET name = $1, price = $2, description = $3, image_url = $4, category_id = $5
+       WHERE id = $6 AND store_id = $7
+       RETURNING id, name, price, description, is_available, image_url, category_id, sort_order`,
+      [name, price, description, imageUrl, categoryId, productId, storeId]
     );
 
     if (result.rows.length === 0) {
@@ -408,6 +426,8 @@ router.put('/products/:productId', validateProductInput, async (req, res, next) 
         description: p.description,
         isAvailable: p.is_available,
         imageUrl: p.image_url,
+        categoryId: p.category_id,
+        sortOrder: p.sort_order,
       },
     });
   } catch (err) {
@@ -424,7 +444,7 @@ router.patch('/products/:productId/toggle', async (req, res, next) => {
       `UPDATE products
        SET is_available = NOT is_available
        WHERE id = $1 AND store_id = $2
-       RETURNING id, name, price, description, is_available, image_url`,
+       RETURNING id, name, price, description, is_available, image_url, category_id, sort_order`,
       [productId, storeId]
     );
 
@@ -441,6 +461,56 @@ router.patch('/products/:productId/toggle', async (req, res, next) => {
         description: p.description,
         isAvailable: p.is_available,
         imageUrl: p.image_url,
+        categoryId: p.category_id,
+        sortOrder: p.sort_order,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Duplicate product ──────────────────────────────────────────
+router.post('/products/:productId/duplicate', async (req, res, next) => {
+  try {
+    const storeId = buildStoreIdCondition(req);
+    const { productId } = req.params;
+
+    const source = await pool.query(
+      `SELECT name, price, description, image_url, is_available, category_id
+       FROM products WHERE id = $1 AND store_id = $2`,
+      [productId, storeId]
+    );
+
+    if (source.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const p = source.rows[0];
+
+    const lastOrder = await pool.query(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM products WHERE store_id = $1`,
+      [storeId]
+    );
+
+    const result = await pool.query(
+      `INSERT INTO products (store_id, name, price, description, image_url, is_available, category_id, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, price, description, is_available, image_url, category_id, sort_order`,
+      [storeId, `${p.name} (Copy)`, p.price, p.description, p.image_url, p.is_available, p.category_id, lastOrder.rows[0].next_order]
+    );
+
+    const dup = result.rows[0];
+    res.status(201).json({
+      product: {
+        id: dup.id,
+        name: dup.name,
+        price: parseFloat(dup.price),
+        description: dup.description,
+        isAvailable: dup.is_available,
+        imageUrl: dup.image_url,
+        categoryId: dup.category_id,
+        sortOrder: dup.sort_order,
       },
     });
   } catch (err) {
@@ -476,12 +546,155 @@ router.delete('/products/:productId', async (req, res, next) => {
   }
 });
 
+// ─── Reorder products ────────────────────────────────────────────
+router.put('/products/reorder', async (req, res, next) => {
+  try {
+    const storeId = buildStoreIdCondition(req);
+    const { productIds } = req.body;
+
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ error: 'productIds array is required' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (let i = 0; i < productIds.length; i++) {
+        await client.query(
+          `UPDATE products SET sort_order = $1 WHERE id = $2 AND store_id = $3`,
+          [i, productIds[i], storeId]
+        );
+      }
+      await client.query('COMMIT');
+    } catch {
+      await client.query('ROLLBACK').catch(() => {});
+      throw new Error('Failed to reorder products');
+    } finally {
+      client.release();
+    }
+
+    res.json({ message: 'Products reordered' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Categories ──────────────────────────────────────────────────
+router.get('/categories', async (req, res, next) => {
+  try {
+    const storeId = buildStoreIdCondition(req);
+    const result = await pool.query(
+      `SELECT id, name, sort_order
+       FROM categories WHERE store_id = $1
+       ORDER BY sort_order ASC, name ASC`,
+      [storeId]
+    );
+
+    res.json({
+      categories: result.rows.map(c => ({
+        id: c.id,
+        name: c.name,
+        sortOrder: c.sort_order,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/categories', async (req, res, next) => {
+  try {
+    const storeId = buildStoreIdCondition(req);
+    const { name } = req.body;
+
+    if (!name || typeof name !== 'string' || name.trim().length < 1 || name.length > 100) {
+      return res.status(400).json({ error: 'Category name is required (1-100 chars)' });
+    }
+
+    const lastOrder = await pool.query(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories WHERE store_id = $1`,
+      [storeId]
+    );
+
+    const result = await pool.query(
+      `INSERT INTO categories (store_id, name, sort_order)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, sort_order`,
+      [storeId, name.trim(), lastOrder.rows[0].next_order]
+    );
+
+    const c = result.rows[0];
+    res.status(201).json({
+      category: { id: c.id, name: c.name, sortOrder: c.sort_order },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/categories/:categoryId', async (req, res, next) => {
+  try {
+    const storeId = buildStoreIdCondition(req);
+    const { categoryId } = req.params;
+    const { name } = req.body;
+
+    if (!name || typeof name !== 'string' || name.trim().length < 1 || name.length > 100) {
+      return res.status(400).json({ error: 'Category name is required (1-100 chars)' });
+    }
+
+    const result = await pool.query(
+      `UPDATE categories SET name = $1 WHERE id = $2 AND store_id = $3
+       RETURNING id, name, sort_order`,
+      [name.trim(), categoryId, storeId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    const c = result.rows[0];
+    res.json({
+      category: { id: c.id, name: c.name, sortOrder: c.sort_order },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/categories/:categoryId', async (req, res, next) => {
+  try {
+    const storeId = buildStoreIdCondition(req);
+    const { categoryId } = req.params;
+
+    // Set category_id to null for all products in this category
+    await pool.query(
+      `UPDATE products SET category_id = NULL WHERE category_id = $1 AND store_id = $2`,
+      [categoryId, storeId]
+    );
+
+    const result = await pool.query(
+      `DELETE FROM categories WHERE id = $1 AND store_id = $2
+       RETURNING id`,
+      [categoryId, storeId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    res.json({ message: 'Category deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/settings', async (req, res, next) => {
   try {
     const storeId = buildStoreIdCondition(req);
     const result = await pool.query(
       `SELECT store_name, slug, whatsapp_number, allow_delivery, allow_pickup,
-              delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions
+              delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions,
+              store_status
        FROM stores WHERE id = $1`,
       [storeId]
     );
@@ -502,8 +715,9 @@ router.get('/settings', async (req, res, next) => {
         freeDeliveryThreshold: s.free_delivery_threshold ? parseFloat(s.free_delivery_threshold) : null,
         pickupAddress: s.pickup_address,
         pickupInstructions: s.pickup_instructions,
-      },
-    });
+      storeStatus: s.store_status || 'open',
+    },
+  });
   } catch (err) {
     next(err);
   }
@@ -532,7 +746,8 @@ router.put('/settings', validateStoreSettings, async (req, res, next) => {
     const result = await pool.query(
       `UPDATE stores SET ${fields.join(', ')} WHERE id = $${idx}
        RETURNING store_name, slug, whatsapp_number, allow_delivery, allow_pickup,
-                delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions`,
+                delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions,
+                store_status`,
       values
     );
 
@@ -548,6 +763,7 @@ router.put('/settings', validateStoreSettings, async (req, res, next) => {
         freeDeliveryThreshold: s.free_delivery_threshold ? parseFloat(s.free_delivery_threshold) : null,
         pickupAddress: s.pickup_address,
         pickupInstructions: s.pickup_instructions,
+      storeStatus: s.store_status || 'open',
       },
     });
   } catch (err) {
@@ -711,12 +927,42 @@ router.get('/stats', async (req, res, next) => {
          COUNT(*) FILTER (WHERE order_status = 'Expired') AS expired_count,
          COUNT(*) FILTER (WHERE order_status = 'Awaiting Customer Confirmation') AS awaiting_confirmation_count,
          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours') AS last_24h_count,
-         COALESCE(SUM(total) FILTER (WHERE order_status = 'Completed'), 0) AS total_revenue
+         COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) AS orders_today,
+         COUNT(*) FILTER (WHERE created_at >= date_trunc('week', CURRENT_DATE)) AS orders_this_week,
+         COALESCE(SUM(total) FILTER (WHERE order_status = 'Completed'), 0) AS total_revenue,
+         COALESCE(SUM(total) FILTER (WHERE order_status = 'Completed' AND completed_at >= CURRENT_DATE), 0) AS revenue_today,
+         COALESCE(SUM(total) FILTER (WHERE order_status = 'Completed' AND completed_at >= date_trunc('week', CURRENT_DATE)), 0) AS revenue_this_week,
+         CASE
+           WHEN COUNT(*) FILTER (WHERE order_status = 'Completed') > 0
+           THEN ROUND(COALESCE(SUM(total) FILTER (WHERE order_status = 'Completed'), 0) /
+                      COUNT(*) FILTER (WHERE order_status = 'Completed'), 2)
+           ELSE 0
+         END AS average_order_value
        FROM orders WHERE store_id = $1`,
       [storeId]
     );
 
-    res.json({ stats: result.rows[0] });
+    const stats = result.rows[0];
+
+    // Fetch best selling product
+    const bestProduct = await pool.query(
+      `SELECT p.id, p.name,
+              SUM(oi.quantity) AS total_sold
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN products p ON p.id = oi.product_id
+       WHERE o.store_id = $1 AND o.order_status = 'Completed'
+       GROUP BY p.id, p.name
+       ORDER BY total_sold DESC
+       LIMIT 1`,
+      [storeId]
+    );
+
+    stats.best_selling_product = bestProduct.rows.length > 0
+      ? { id: bestProduct.rows[0].id, name: bestProduct.rows[0].name, totalSold: parseInt(bestProduct.rows[0].total_sold, 10) }
+      : null;
+
+    res.json({ stats });
   } catch (err) {
     next(err);
   }

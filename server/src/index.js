@@ -9,6 +9,7 @@ import pool from './db/pool.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { initializeSocket } from './socket/index.js';
 import { startOrderExpiryCron } from './cron/orderExpiry.js';
+import { startOtpCleanup } from './services/otpService.js';
 import authRoutes from './routes/auth.js';
 import storeRoutes from './routes/store.js';
 import orderRoutes from './routes/orders.js';
@@ -48,6 +49,7 @@ const io = initializeSocket(server, corsOptions);
 app.set('io', io);
 
 startOrderExpiryCron(io);
+startOtpCleanup();
 
 async function start() {
   try {

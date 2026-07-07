@@ -29,6 +29,7 @@ function StoreContent() {
   const cart = useCart();
   const [store, setStore] = useState(null);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,10 +41,11 @@ function StoreContent() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([api.getStore(slug), api.getStoreProducts(slug)])
-      .then(([storeData, productsData]) => {
+    Promise.all([api.getStore(slug), api.getStoreProducts(slug), api.getStoreCategories(slug)])
+      .then(([storeData, productsData, categoriesData]) => {
         setStore(storeData.store);
         setProducts(productsData.products);
+        setCategories(categoriesData.categories || []);
         if (storeData.store.allowPickup && !storeData.store.allowDelivery) {
           cart.dispatch({ type: 'SET_FULFILLMENT', method: 'pickup' });
         }
@@ -102,6 +104,61 @@ function StoreContent() {
     }
   };
 
+  function renderProductCard(product, cart) {
+    const inCart = cart.items.find((i) => i.productId === product.id);
+    return (
+      <div key={product.id} className={`bg-white rounded-lg border p-4 ${!product.isAvailable ? 'opacity-50' : ''}`}>
+        <div className="flex gap-3">
+          {product.imageUrl && (
+            <ProductImage imageUrl={product.imageUrl} name={product.name} size="list" />
+          )}
+          <div className="flex-1">
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900">{product.name}</h3>
+                {product.description && (
+                  <p className="text-sm text-gray-500 mt-0.5">{product.description}</p>
+                )}
+                <p className="text-blue-600 font-bold mt-1">{formatPKR(product.price)}</p>
+              </div>
+              <div className="ml-3">
+                {!product.isAvailable ? (
+                  <span className="text-xs text-gray-400">Unavailable</span>
+                ) : store.isOpen ? (
+                  <div className="flex items-center gap-2">
+                    {inCart ? (
+                      <>
+                        <button
+                          onClick={() => cart.updateQuantity(product.id, inCart.quantity - 1)}
+                          className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
+                          disabled={inCart.quantity <= 1}
+                        >−</button>
+                        <span className="w-6 text-center font-medium">{inCart.quantity}</span>
+                        <button
+                          onClick={() => cart.updateQuantity(product.id, inCart.quantity + 1)}
+                          className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
+                        >+</button>
+                        <button
+                          onClick={() => cart.removeItem(product.id)}
+                          className="text-xs text-red-500 ml-1"
+                        >✕</button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => cart.addItem(product)}
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"
+                      >Add</button>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <LoadingSpinner text="Loading store..." />;
   if (error) return <div className="max-w-lg mx-auto p-4"><ErrorMessage message={error} /></div>;
   if (!store) return <div className="max-w-lg mx-auto p-4"><ErrorMessage message="Store not found" /></div>;
@@ -109,10 +166,18 @@ function StoreContent() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-10">
-        <h1 className="text-xl font-bold text-gray-900">{store.storeName}</h1>
-        {!store.isOpen && (
-          <span className="inline-block mt-1 text-sm bg-red-100 text-red-700 px-2 py-0.5 rounded">Closed</span>
-        )}
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-gray-900">{store.storeName}</h1>
+          {store.storeStatus === 'temporarily_closed' ? (
+            <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Temporarily Closed</span>
+          ) : store.storeStatus === 'closed' ? (
+            <span className="text-sm bg-red-100 text-red-700 px-2 py-0.5 rounded">Closed</span>
+          ) : !store.isOpen ? (
+            <span className="text-sm bg-red-100 text-red-700 px-2 py-0.5 rounded">Closed</span>
+          ) : (
+            <span className="text-sm bg-green-100 text-green-700 px-2 py-0.5 rounded">Open</span>
+          )}
+        </div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 pb-32">
@@ -133,60 +198,27 @@ function StoreContent() {
           </div>
         )}
 
-        <div ref={productGridRef} className="grid gap-4 my-4">
+        <div ref={productGridRef} className="grid gap-6 my-4">
           {products.length === 0 && (
             <p className="text-center text-gray-500 py-8">No products available</p>
           )}
-          {products.map((product) => {
-            const inCart = cart.items.find((i) => i.productId === product.id);
+
+          {/* Uncategorized products */}
+          {products.filter(p => !p.categoryId).length > 0 && (
+            <div className="grid gap-4">
+              {products.filter(p => !p.categoryId).map((product) => renderProductCard(product, cart))}
+            </div>
+          )}
+
+          {/* Products grouped by category */}
+          {categories.map((cat) => {
+            const catProducts = products.filter(p => p.categoryId === cat.id);
+            if (catProducts.length === 0) return null;
             return (
-              <div key={product.id} className={`bg-white rounded-lg border p-4 ${!product.isAvailable ? 'opacity-50' : ''}`}>
-                <div className="flex gap-3">
-                  {product.imageUrl && (
-                    <ProductImage imageUrl={product.imageUrl} name={product.name} size="list" />
-                  )}
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">{product.name}</h3>
-                        {product.description && (
-                          <p className="text-sm text-gray-500 mt-0.5">{product.description}</p>
-                        )}
-                        <p className="text-blue-600 font-bold mt-1">{formatPKR(product.price)}</p>
-                      </div>
-                      <div className="ml-3">
-                        {!product.isAvailable ? (
-                          <span className="text-xs text-gray-400">Unavailable</span>
-                        ) : store.isOpen ? (
-                          <div className="flex items-center gap-2">
-                            {inCart ? (
-                              <>
-                                <button
-                                  onClick={() => cart.updateQuantity(product.id, inCart.quantity - 1)}
-                                  className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
-                                  disabled={inCart.quantity <= 1}
-                                >−</button>
-                                <span className="w-6 text-center font-medium">{inCart.quantity}</span>
-                                <button
-                                  onClick={() => cart.updateQuantity(product.id, inCart.quantity + 1)}
-                                  className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
-                                >+</button>
-                                <button
-                                  onClick={() => cart.removeItem(product.id)}
-                                  className="text-xs text-red-500 ml-1"
-                                >✕</button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={() => cart.addItem(product)}
-                                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"
-                              >Add</button>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
+              <div key={cat.id}>
+                <h3 className="font-semibold text-gray-700 text-sm uppercase tracking-wide mb-2">{cat.name}</h3>
+                <div className="grid gap-4">
+                  {catProducts.map(product => renderProductCard(product, cart))}
                 </div>
               </div>
             );
