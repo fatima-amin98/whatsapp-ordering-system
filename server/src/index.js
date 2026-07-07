@@ -22,6 +22,9 @@ const corsOptions = {
   credentials: true,
 };
 
+// Trust Railway/Vercel proxy for correct req.ip in rate limiting
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,

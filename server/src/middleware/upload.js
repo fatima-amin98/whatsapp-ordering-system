@@ -1,5 +1,4 @@
 import multer from 'multer';
-import crypto from 'crypto';
 
 const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB

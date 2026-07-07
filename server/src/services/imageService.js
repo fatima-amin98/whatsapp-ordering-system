@@ -8,10 +8,6 @@ function generateFilename(storeId, originalName) {
   return `${storeId}/${unique}-${ts}.${ext}`;
 }
 
-function extractFilenameFromPath(storeId, uniquePart) {
-  return `${storeId}/${uniquePart}`;
-}
-
 /**
  * Upload a product image to storage and return the public URL.
  */
@@ -28,18 +24,4 @@ export async function deleteProductImage(imageUrl) {
   if (isSupabaseUrl(imageUrl)) {
     await deleteImage(imageUrl);
   }
-}
-
-/**
- * Replace a product image: deletes the old one from storage, uploads the new one.
- * Returns the new URL, or null if no file is provided.
- */
-export async function replaceProductImage(storeId, oldImageUrl, newFile) {
-  if (!newFile) return null;
-
-  if (oldImageUrl) {
-    await deleteProductImage(oldImageUrl);
-  }
-
-  return await uploadProductImage(storeId, newFile);
 }

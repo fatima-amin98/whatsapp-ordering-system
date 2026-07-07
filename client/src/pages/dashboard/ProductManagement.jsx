@@ -39,6 +39,7 @@ export default function ProductManagement() {
 
   const fetchProducts = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await api.getProducts();
       setProducts(data.products);

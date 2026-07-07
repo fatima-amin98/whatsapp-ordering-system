@@ -1,16 +1,10 @@
 import { normalizePhone, validatePhone as validatePakPhone } from '../utils/phoneUtils.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const MAX_STRING_LENGTH = 5000;
 const MAX_NAME_LENGTH = 100;
 const MAX_ADDRESS_LENGTH = 1000;
-
-export function escapeHtml(str, maxLen = MAX_STRING_LENGTH) {
-  if (typeof str !== 'string') return '';
-  return str.trim().slice(0, maxLen).replace(/[<>&"']/g, (c) => {
-    const map = { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' };
-    return map[c];
-  });
-}
 
 export function validateCheckoutInput(req, res, next) {
   const { customerName, customerPhone, fulfillmentMethod, deliveryAddress, items } = req.body;
@@ -51,6 +45,8 @@ export function validateCheckoutInput(req, res, next) {
       const item = items[i];
       if (!item.productId || typeof item.productId !== 'string') {
         errors.push({ field: `items[${i}].productId`, message: 'Product ID is required' });
+      } else if (!UUID_REGEX.test(item.productId)) {
+        errors.push({ field: `items[${i}].productId`, message: 'Invalid product ID format' });
       }
       if (!item.quantity || !Number.isInteger(item.quantity) || item.quantity < 1) {
         errors.push({ field: `items[${i}].quantity`, message: 'Quantity must be a positive integer' });
@@ -65,10 +61,10 @@ export function validateCheckoutInput(req, res, next) {
   const normalizedPhone = customerPhone ? validatePakPhone(customerPhone).normalized : null;
 
   req.cleanInput = {
-    customerName: escapeHtml(customerName, MAX_NAME_LENGTH),
+    customerName: customerName.trim().slice(0, MAX_NAME_LENGTH),
     customerPhone: normalizedPhone,
     fulfillmentMethod,
-    deliveryAddress: fulfillmentMethod === 'delivery' ? escapeHtml(deliveryAddress, MAX_ADDRESS_LENGTH) : null,
+    deliveryAddress: fulfillmentMethod === 'delivery' ? deliveryAddress.trim().slice(0, MAX_ADDRESS_LENGTH) : null,
     items,
   };
 
@@ -107,9 +103,9 @@ export function validateProductInput(req, res, next) {
   }
 
   req.cleanInput = {
-    name: escapeHtml(name, 150),
+    name: name.trim().slice(0, 150),
     price: Math.round(parseFloat(price) * 100) / 100,
-    description: description ? escapeHtml(description) : null,
+    description: description ? description.trim().slice(0, MAX_STRING_LENGTH) : null,
     imageUrl: imageUrl && imageUrl.trim() ? imageUrl.trim() : null,
   };
 
@@ -154,14 +150,14 @@ export function validateStoreSettings(req, res, next) {
   }
 
   req.cleanInput = {};
-  if (storeName !== undefined) req.cleanInput.storeName = escapeHtml(storeName, 100);
+  if (storeName !== undefined) req.cleanInput.storeName = storeName.trim().slice(0, 100);
   if (whatsappNumber !== undefined) req.cleanInput.whatsappNumber = validatePakPhone(whatsappNumber).normalized;
   if (allowDelivery !== undefined) req.cleanInput.allowDelivery = Boolean(allowDelivery);
   if (allowPickup !== undefined) req.cleanInput.allowPickup = Boolean(allowPickup);
   if (deliveryFee !== undefined) req.cleanInput.deliveryFee = Math.round(parseFloat(deliveryFee) * 100) / 100;
   if (freeDeliveryThreshold !== undefined) req.cleanInput.freeDeliveryThreshold = freeDeliveryThreshold !== null ? Math.round(parseFloat(freeDeliveryThreshold) * 100) / 100 : null;
-  if (pickupAddress !== undefined) req.cleanInput.pickupAddress = escapeHtml(pickupAddress, 1000);
-  if (pickupInstructions !== undefined) req.cleanInput.pickupInstructions = escapeHtml(pickupInstructions);
+  if (pickupAddress !== undefined) req.cleanInput.pickupAddress = pickupAddress.trim().slice(0, 1000);
+  if (pickupInstructions !== undefined) req.cleanInput.pickupInstructions = pickupInstructions.trim().slice(0, MAX_STRING_LENGTH);
 
   next();
 }
@@ -240,7 +236,7 @@ export function validateRegisterInput(req, res, next) {
   const normalizedPhone = validatePakPhone(whatsappNumber).normalized;
 
   req.cleanInput = {
-    storeName: escapeHtml(storeName, 100),
+    storeName: storeName.trim().slice(0, 100),
     slug: slug.toLowerCase().replace(/[^a-z0-9-]/g, ''),
     whatsappNumber: normalizedPhone,
     password,

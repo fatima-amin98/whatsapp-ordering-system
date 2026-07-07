@@ -35,5 +35,3 @@ export function validatePhone(input) {
   }
   return { valid: true, normalized };
 }
-
-export { normalizePhone as normalizePhoneNumber };

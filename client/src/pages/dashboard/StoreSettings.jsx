@@ -16,6 +16,7 @@ export default function StoreSettings() {
 
   const fetchSettings = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await api.getSettings();
       setSettings(data.settings);
@@ -138,7 +139,10 @@ export default function StoreSettings() {
             <input
               type="checkbox"
               checked={form.allowDelivery}
-              onChange={(e) => setForm({ ...form, allowDelivery: e.target.checked })}
+              onChange={(e) => {
+                if (!e.target.checked && !form.allowPickup) return;
+                setForm({ ...form, allowDelivery: e.target.checked });
+              }}
               className="rounded border-gray-300"
             />
             Allow Delivery
@@ -147,7 +151,10 @@ export default function StoreSettings() {
             <input
               type="checkbox"
               checked={form.allowPickup}
-              onChange={(e) => setForm({ ...form, allowPickup: e.target.checked })}
+              onChange={(e) => {
+                if (!e.target.checked && !form.allowDelivery) return;
+                setForm({ ...form, allowPickup: e.target.checked });
+              }}
               className="rounded border-gray-300"
             />
             Allow Pickup

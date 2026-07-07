@@ -37,11 +37,16 @@ async function handleReminders() {
 
 async function handleExpiry(io) {
   const result = await pool.query(
-    `UPDATE orders
-     SET order_status = 'Expired', expired_at = NOW()
-     WHERE order_status IN ('Confirmation Pending', 'Awaiting Customer Confirmation')
-       AND EXTRACT(EPOCH FROM (NOW() - confirmation_sent_at)) / 60 > $1
-     RETURNING id, store_id, order_status`,
+    `WITH expired AS (
+       UPDATE orders
+       SET order_status = 'Expired', expired_at = NOW()
+       WHERE order_status IN ('Confirmation Pending', 'Awaiting Customer Confirmation')
+         AND EXTRACT(EPOCH FROM (NOW() - confirmation_sent_at)) / 60 > $1
+       RETURNING id, store_id
+     )
+     SELECT e.id, e.store_id, o.order_status AS old_status
+     FROM expired e
+     JOIN orders o ON o.id = e.id`,
     [config.cron.expiryMinutes]
   );
 
@@ -52,7 +57,7 @@ async function handleExpiry(io) {
       for (const order of result.rows) {
         io.to(`store:${order.store_id}`).emit('order-status-changed', {
           orderId: order.id,
-          oldStatus: order.order_status,
+          oldStatus: order.old_status,
           newStatus: 'Expired',
         });
       }

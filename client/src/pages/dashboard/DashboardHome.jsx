@@ -19,6 +19,7 @@ export default function DashboardHome() {
   const audioRef = useRef(null);
 
   const fetchOrders = useCallback(async () => {
+    setError(null);
     try {
       const filterMap = {
         active: 'Confirmation Pending,Awaiting Customer Confirmation,Pending,Accepted',

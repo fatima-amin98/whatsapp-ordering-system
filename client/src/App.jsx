@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Link } from 'react-router-dom';
 import StoreFront from './pages/public/StoreFront';
 import OrderConfirmation from './pages/public/OrderConfirmation';
 import LoginPage from './pages/auth/LoginPage';
@@ -34,7 +34,7 @@ export default function App() {
           <div className="text-center">
             <h1 className="text-4xl font-bold text-gray-800 mb-2">404</h1>
             <p className="text-gray-600">Page not found</p>
-            <a href="/" className="text-blue-600 underline mt-4 inline-block">Go home</a>
+            <Link to="/" className="text-blue-600 underline mt-4 inline-block">Go home</Link>
           </div>
         </div>
       } />

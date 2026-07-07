@@ -82,12 +82,13 @@ export default function ImageUploader({ currentImageUrl, onImageUrlChange, error
       const formData = new FormData();
       formData.append('image', file);
       const result = await api.uploadImage(formData);
-      URL.revokeObjectURL(file);
+      URL.revokeObjectURL(previewUrl);
       setPreviewUrl(result.imageUrl);
       onImageUrlChange(result.imageUrl);
       setMode('existing');
     } catch (err) {
       setUploadError(err.data?.error || err.message || 'Upload failed');
+      URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
     } finally {
       setUploading(false);

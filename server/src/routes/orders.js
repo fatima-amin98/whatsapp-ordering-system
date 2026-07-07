@@ -162,7 +162,7 @@ router.post('/:orderId/confirm', generalRateLimit(10, 60000), async (req, res, n
       });
       io.to(`store:${updated.store_id}`).emit('order-status-changed', {
         orderId: updated.id,
-        oldStatus: 'Confirmation Pending',
+        oldStatus: 'Awaiting Customer Confirmation',
         newStatus: 'Pending',
       });
     }
