@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS stores (
   store_name VARCHAR(100) NOT NULL,
   slug VARCHAR(100) UNIQUE NOT NULL,
   whatsapp_number VARCHAR(20) NOT NULL,
+  email VARCHAR(255),
   allow_delivery BOOLEAN DEFAULT TRUE,
   allow_pickup BOOLEAN DEFAULT TRUE,
   delivery_fee DECIMAL(10,2) DEFAULT 0.00,
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS stores (
   pickup_address TEXT,
   pickup_instructions TEXT,
   password_hash TEXT NOT NULL,
+  store_status VARCHAR(20) DEFAULT 'open',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

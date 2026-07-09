@@ -35,6 +35,8 @@ export default {
     authMaxAttempts: 5,
     registerWindowMs: 60 * 60 * 1000,
     registerMaxAttempts: 3,
+    forgotPasswordWindowMs: 60 * 60 * 1000,
+    forgotPasswordMaxAttempts: 5,
   },
   cron: {
     expiryMinutes: 60,
@@ -43,4 +45,13 @@ export default {
   },
   isProduction: process.env.NODE_ENV === 'production',
   supabaseConfigured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+
+  // Email (nodemailer / Gmail SMTP)
+  email: {
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.EMAIL_PORT || '587', 10),
+    user: process.env.EMAIL_USER || '',
+    pass: process.env.EMAIL_PASS || '',
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
+  },
 };

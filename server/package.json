@@ -18,11 +18,12 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
     "node-cron": "^3.0.3",
+    "nodemailer": "^9.0.3",
     "pg": "^8.13.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.0"
   },
   "engines": {
-  "node": "22.x"
-}
+    "node": "22.x"
+  }
 }

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pool from '../db/pool.js';
 import { validateCheckoutInput } from '../middleware/validate.js';
 import { orderRateLimit } from '../middleware/rateLimit.js';
+import { sendNewOrderNotification } from '../services/emailService.js';
 import config from '../config.js';
 
 const router = Router();
@@ -151,7 +152,7 @@ router.post('/:slug/orders', validateCheckoutInput, orderRateLimit, async (req, 
   const client = await pool.connect();
   try {
     const storeResult = await pool.query(
-      `SELECT id, store_name, slug, whatsapp_number, delivery_fee, free_delivery_threshold,
+      `SELECT id, store_name, slug, whatsapp_number, email, delivery_fee, free_delivery_threshold,
               allow_delivery, allow_pickup, store_status
        FROM stores WHERE slug = $1`,
       [req.params.slug]
@@ -264,6 +265,24 @@ router.post('/:slug/orders', validateCheckoutInput, orderRateLimit, async (req, 
         items: orderItemsData,
       };
       io.to(`store:${store.id}`).emit('new-order', { order: orderWithItems });
+    }
+
+    // Send order notification email to merchant (non-blocking)
+    if (store.email) {
+      sendNewOrderNotification({
+        email: store.email,
+        customerName,
+        customerPhone,
+        orderNumber: order.id,
+        products: orderItemsData.map(i => ({
+          productName: i.productName,
+          quantity: i.quantity,
+        })),
+        total,
+        fulfillmentMethod,
+        deliveryAddress,
+        storeName: store.store_name,
+      }).catch(err => console.error('[Email] Failed to send order notification:', err.message));
     }
 
     res.status(201).json({

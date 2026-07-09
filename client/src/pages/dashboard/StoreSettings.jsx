@@ -23,6 +23,7 @@ export default function StoreSettings() {
       setForm({
         storeName: data.settings.storeName || '',
         whatsappNumber: data.settings.whatsappNumber || '',
+        email: data.settings.email || '',
         allowDelivery: data.settings.allowDelivery !== false,
         allowPickup: data.settings.allowPickup !== false,
         deliveryFee: String(data.settings.deliveryFee || '0'),
@@ -132,6 +133,16 @@ export default function StoreSettings() {
             type="tel"
             value={form.whatsappNumber}
             onChange={(e) => setForm({ ...form, whatsappNumber: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
           />
         </div>

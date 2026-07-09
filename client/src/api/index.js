@@ -31,7 +31,11 @@ export const api = {
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
   sendOtp: (body) => request('/auth/send-otp', { method: 'POST', body }),
+  resendOtp: (body) => request('/auth/resend-otp', { method: 'POST', body }),
   verifyOtp: (body) => request('/auth/verify-otp', { method: 'POST', body }),
+  forgotPassword: (body) => request('/auth/forgot-password', { method: 'POST', body }),
+  verifyResetOtp: (body) => request('/auth/verify-reset-otp', { method: 'POST', body }),
+  resetPassword: (body) => request('/auth/reset-password', { method: 'POST', body }),
 
   // Store (public)
   getStore: (slug) => request(`/store/${slug}`),
@@ -45,7 +49,14 @@ export const api = {
   cancelOrder: (orderId, token) => request(`/orders/${orderId}/cancel?token=${token}`, { method: 'POST' }),
 
   // Dashboard (protected)
-  getOrders: (status) => request(`/dashboard/orders${status ? `?status=${status}` : ''}`),
+  getOrders: (status, limit) => {
+    let url = '/dashboard/orders';
+    const params = [];
+    if (status) params.push(`status=${encodeURIComponent(status)}`);
+    if (limit) params.push(`limit=${limit}`);
+    if (params.length > 0) url += '?' + params.join('&');
+    return request(url);
+  },
   getOrderDetail: (id) => request(`/dashboard/orders/${id}`),
   sendConfirmation: (id) => request(`/dashboard/orders/${id}/send-confirmation`, { method: 'POST' }),
   acceptOrder: (id) => request(`/dashboard/orders/${id}/accept`, { method: 'POST' }),

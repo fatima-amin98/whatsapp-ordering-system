@@ -50,7 +50,7 @@ function formatOrderRow(o) {
 router.get('/orders', async (req, res, next) => {
   try {
     const storeId = buildStoreIdCondition(req);
-    const { status } = req.query;
+    const { status, limit } = req.query;
 
     let sql = `SELECT id, customer_name, customer_phone, fulfillment_method, delivery_address,
                       order_status, subtotal, delivery_fee, total,
@@ -75,6 +75,13 @@ router.get('/orders', async (req, res, next) => {
     }
 
     sql += ` ORDER BY created_at DESC`;
+
+    // Optional LIMIT for performance (e.g. dashboard recent orders)
+    const limitNum = limit ? parseInt(limit, 10) : 0;
+    if (limitNum > 0) {
+      sql += ` LIMIT $${params.length + 1}`;
+      params.push(limitNum);
+    }
 
     const result = await storeQuery(sql, params);
     const orders = result.rows.map(formatOrderRow);
@@ -692,7 +699,7 @@ router.get('/settings', async (req, res, next) => {
   try {
     const storeId = buildStoreIdCondition(req);
     const result = await pool.query(
-      `SELECT store_name, slug, whatsapp_number, allow_delivery, allow_pickup,
+      `SELECT store_name, slug, whatsapp_number, email, allow_delivery, allow_pickup,
               delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions,
               store_status
        FROM stores WHERE id = $1`,
@@ -709,15 +716,16 @@ router.get('/settings', async (req, res, next) => {
         storeName: s.store_name,
         slug: s.slug,
         whatsappNumber: s.whatsapp_number,
+        email: s.email,
         allowDelivery: s.allow_delivery,
         allowPickup: s.allow_pickup,
         deliveryFee: parseFloat(s.delivery_fee),
         freeDeliveryThreshold: s.free_delivery_threshold ? parseFloat(s.free_delivery_threshold) : null,
         pickupAddress: s.pickup_address,
         pickupInstructions: s.pickup_instructions,
-      storeStatus: s.store_status || 'open',
-    },
-  });
+        storeStatus: s.store_status || 'open',
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -745,7 +753,7 @@ router.put('/settings', validateStoreSettings, async (req, res, next) => {
     values.push(storeId);
     const result = await pool.query(
       `UPDATE stores SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING store_name, slug, whatsapp_number, allow_delivery, allow_pickup,
+       RETURNING store_name, slug, whatsapp_number, email, allow_delivery, allow_pickup,
                 delivery_fee, free_delivery_threshold, pickup_address, pickup_instructions,
                 store_status`,
       values
@@ -757,13 +765,14 @@ router.put('/settings', validateStoreSettings, async (req, res, next) => {
         storeName: s.store_name,
         slug: s.slug,
         whatsappNumber: s.whatsapp_number,
+        email: s.email,
         allowDelivery: s.allow_delivery,
         allowPickup: s.allow_pickup,
         deliveryFee: parseFloat(s.delivery_fee),
         freeDeliveryThreshold: s.free_delivery_threshold ? parseFloat(s.free_delivery_threshold) : null,
         pickupAddress: s.pickup_address,
         pickupInstructions: s.pickup_instructions,
-      storeStatus: s.store_status || 'open',
+        storeStatus: s.store_status || 'open',
       },
     });
   } catch (err) {

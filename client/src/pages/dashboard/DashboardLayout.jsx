@@ -3,7 +3,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV_ITEMS = [
-  { to: '/dashboard', label: 'Orders', icon: '📋', end: true },
+  { to: '/dashboard', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/dashboard/orders', label: 'Orders', icon: '📋', end: false },
   { to: '/dashboard/products', label: 'Products', icon: '📦', end: false },
   { to: '/dashboard/settings', label: 'Settings', icon: '⚙️', end: false },
 ];

@@ -114,7 +114,7 @@ export function validateProductInput(req, res, next) {
 }
 
 export function validateStoreSettings(req, res, next) {
-  const { storeName, whatsappNumber, allowDelivery, allowPickup, deliveryFee, freeDeliveryThreshold, pickupAddress, pickupInstructions, storeStatus } = req.body;
+  const { storeName, whatsappNumber, email, allowDelivery, allowPickup, deliveryFee, freeDeliveryThreshold, pickupAddress, pickupInstructions, storeStatus } = req.body;
   const errors = [];
 
   if (storeName !== undefined) {
@@ -128,6 +128,10 @@ export function validateStoreSettings(req, res, next) {
     if (!phoneCheck.valid) {
       errors.push({ field: 'whatsappNumber', message: phoneCheck.error });
     }
+  }
+
+  if (email !== undefined && !isValidEmail(email)) {
+    errors.push({ field: 'email', message: 'A valid email address is required' });
   }
 
   if (deliveryFee !== undefined && (isNaN(Number(deliveryFee)) || Number(deliveryFee) < 0)) {
@@ -157,6 +161,7 @@ export function validateStoreSettings(req, res, next) {
   req.cleanInput = {};
   if (storeName !== undefined) req.cleanInput.storeName = storeName.trim().slice(0, 100);
   if (whatsappNumber !== undefined) req.cleanInput.whatsappNumber = validatePakPhone(whatsappNumber).normalized;
+  if (email !== undefined) req.cleanInput.email = email.trim().toLowerCase();
   if (allowDelivery !== undefined) req.cleanInput.allowDelivery = Boolean(allowDelivery);
   if (allowPickup !== undefined) req.cleanInput.allowPickup = Boolean(allowPickup);
   if (deliveryFee !== undefined) req.cleanInput.deliveryFee = Math.round(parseFloat(deliveryFee) * 100) / 100;
@@ -206,8 +211,12 @@ export function validateBusinessHours(req, res, next) {
   next();
 }
 
+function isValidEmail(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export function validateRegisterInput(req, res, next) {
-  const { storeName, slug, whatsappNumber, password, verificationToken } = req.body;
+  const { storeName, slug, whatsappNumber, email, password, verificationToken } = req.body;
   const errors = [];
 
   if (!storeName || typeof storeName !== 'string' || storeName.trim().length < 1 || storeName.length > 100) {
@@ -229,6 +238,10 @@ export function validateRegisterInput(req, res, next) {
     }
   }
 
+  if (!email || !isValidEmail(email)) {
+    errors.push({ field: 'email', message: 'A valid email address is required' });
+  }
+
   if (!password || typeof password !== 'string' || password.length < 8) {
     errors.push({ field: 'password', message: 'Password must be at least 8 characters' });
   } else if (password.length > 128) {
@@ -245,6 +258,7 @@ export function validateRegisterInput(req, res, next) {
     storeName: storeName.trim().slice(0, 100),
     slug: slug.toLowerCase().replace(/[^a-z0-9-]/g, ''),
     whatsappNumber: normalizedPhone,
+    email: email.trim().toLowerCase(),
     password,
     verificationToken,
   };

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api';
@@ -6,41 +6,56 @@ import { api } from '../../api';
 export default function RegisterPage() {
   const { merchant, register } = useAuth();
   const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1=phone, 2=otp, 3=register
-  const [phone, setPhone] = useState('');
+  const [step, setStep] = useState(1); // 1=form, 2=otp, 3=success
+  const [form, setForm] = useState({
+    storeName: '', slug: '', email: '', whatsappNumber: '', password: '', confirmPassword: '',
+  });
   const [otp, setOtp] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
-  const [form, setForm] = useState({ storeName: '', slug: '', password: '', confirmPassword: '' });
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState('');
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
+  const timerRef = useRef(null);
 
-  if (merchant) return <Navigate to="/dashboard" replace />;
+  const startCountdown = useCallback(() => {
+    setOtpCountdown(60);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setOtpCountdown((prev) => {
+        if (prev <= 1) { clearInterval(timerRef.current); timerRef.current = null; return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
-  // ─── Step 1: Send OTP ───────────────────────────────────────────
-  const handleSendOtp = async (e) => {
+  // ─── Step 1: Validate form & send OTP ──────────────────────────
+  const validateForm = () => {
+    const errs = {};
+    if (!form.storeName.trim()) errs.storeName = 'Store name is required';
+    if (!form.slug.trim()) errs.slug = 'Store URL is required';
+    else if (!/^[a-z0-9-]+$/.test(form.slug)) errs.slug = 'Only lowercase letters, numbers, hyphens';
+    if (!form.email.trim()) errs.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errs.email = 'Invalid email format';
+    if (!form.whatsappNumber.trim()) errs.whatsappNumber = 'WhatsApp number is required';
+    if (!form.password) errs.password = 'Password is required';
+    else if (form.password.length < 8) errs.password = 'At least 8 characters';
+    if (form.password !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match';
+    return errs;
+  };
+
+  const handleContinue = async (e) => {
     e.preventDefault();
     setApiError('');
-    if (!phone.trim()) {
-      setErrors({ phone: 'Phone number is required' });
-      return;
-    }
-    setErrors({});
+    const errs = validateForm();
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
     setLoading(true);
     try {
-      const data = await api.sendOtp({ phone: phone.trim() });
-      setOtpSent(true);
-      // Start resend countdown
-      setOtpCountdown(60);
-      const timer = setInterval(() => {
-        setOtpCountdown((prev) => {
-          if (prev <= 1) { clearInterval(timer); return 0; }
-          return prev - 1;
-        });
-      }, 1000);
+      const data = await api.sendOtp({ email: form.email.trim() });
+      startCountdown();
       setStep(2);
     } catch (err) {
       setApiError(err.data?.error || err.message || 'Failed to send verification code');
@@ -49,7 +64,7 @@ export default function RegisterPage() {
     }
   };
 
-  // ─── Step 2: Verify OTP ──────────────────────────────────────────
+  // ─── Step 2: Verify OTP ─────────────────────────────────────────
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     setApiError('');
@@ -60,9 +75,10 @@ export default function RegisterPage() {
     setErrors({});
     setLoading(true);
     try {
-      const data = await api.verifyOtp({ phone: phone.trim(), otp: otp.trim() });
+      const data = await api.verifyOtp({ email: form.email.trim(), otp: otp.trim() });
       setVerificationToken(data.verificationToken);
-      setStep(3);
+      // Now register
+      await handleRegister(data.verificationToken);
     } catch (err) {
       setApiError(err.data?.error || err.message || 'Invalid verification code');
     } finally {
@@ -70,39 +86,40 @@ export default function RegisterPage() {
     }
   };
 
-  // ─── Step 3: Complete Registration ────────────────────────────────
-  const validate = () => {
-    const errs = {};
-    if (!form.storeName.trim()) errs.storeName = 'Store name is required';
-    if (!form.slug.trim()) errs.slug = 'Store URL is required';
-    else if (!/^[a-z0-9-]+$/.test(form.slug)) errs.slug = 'Only lowercase letters, numbers, hyphens';
-    if (!form.password) errs.password = 'Password is required';
-    else if (form.password.length < 8) errs.password = 'At least 8 characters';
-    if (form.password !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match';
-    return errs;
+  const handleResendOtp = async () => {
+    setApiError('');
+    setLoading(true);
+    try {
+      await api.resendOtp({ email: form.email.trim() });
+      startCountdown();
+      setOtp('');
+    } catch (err) {
+      setApiError(err.data?.error || err.message || 'Failed to resend code');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    setApiError('');
-    const errs = validate();
-    setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-
-    setLoading(true);
+  // ─── Registration (called after OTP verification) ──────────────
+  const handleRegister = async (token) => {
     try {
       const data = await register({
         storeName: form.storeName.trim(),
         slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, ''),
-        whatsappNumber: phone.trim(),
+        whatsappNumber: form.whatsappNumber.trim(),
+        email: form.email.trim(),
         password: form.password,
-        verificationToken,
+        verificationToken: token,
       });
-      setSuccess({ storeName: data.store.storeName, storeUrl: data.storeUrl, slug: data.store.slug, qrCode: data.qrCode });
+      setSuccess({
+        storeName: data.store.storeName,
+        storeUrl: data.storeUrl,
+        slug: data.store.slug,
+        qrCode: data.qrCode,
+      });
+      setStep(3);
     } catch (err) {
       setApiError(err.data?.error || err.message || 'Registration failed');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -112,7 +129,7 @@ export default function RegisterPage() {
   };
 
   // ─── Success State ──────────────────────────────────────────────
-  if (success) {
+  if (step === 3 && success) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 bg-gray-50 py-8">
         <div className="w-full max-w-md">
@@ -128,9 +145,7 @@ export default function RegisterPage() {
 
             <div className="space-y-3">
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(success.storeUrl);
-                }}
+                onClick={() => navigator.clipboard.writeText(success.storeUrl)}
                 className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700"
               >
                 📋 Copy Store Link
@@ -157,29 +172,31 @@ export default function RegisterPage() {
     );
   }
 
+  // If already logged in and not in success state, redirect to dashboard
+  if (merchant) return <Navigate to="/dashboard" replace />;
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-gray-50 py-8">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           {/* Step indicator */}
           <div className="flex items-center justify-center gap-2 mb-6">
-            {[1, 2, 3].map((s) => (
+            {[1, 2].map((s) => (
               <div key={s} className="flex items-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                   step >= s ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'
                 }`}>
                   {s}
                 </div>
-                {s < 3 && <div className={`w-8 h-0.5 ${step > s ? 'bg-blue-600' : 'bg-gray-200'}`} />}
+                {s < 2 && <div className={`w-8 h-0.5 ${step > s ? 'bg-blue-600' : 'bg-gray-200'}`} />}
               </div>
             ))}
           </div>
 
           <h1 className="text-2xl font-bold text-center mb-1">Create Your Store</h1>
           <p className="text-sm text-gray-500 text-center mb-6">
-            {step === 1 && 'Start by verifying your phone number'}
-            {step === 2 && 'Enter the verification code sent to your phone'}
-            {step === 3 && 'Set up your store details'}
+            {step === 1 && 'Fill in your store details'}
+            {step === 2 && 'Enter the verification code sent to your email'}
           </p>
 
           {apiError && (
@@ -188,75 +205,9 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* Step 1: Phone Number */}
+          {/* Step 1: Registration Form */}
           {step === 1 && (
-            <form onSubmit={handleSendOtp} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Number</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value); setErrors({}); }}
-                  placeholder="+923001234567"
-                  className={`w-full border ${errors.phone ? 'border-red-400' : 'border-gray-300'} rounded-lg px-3 py-2 text-sm`}
-                />
-                {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Sending code...' : 'Send Verification Code'}
-              </button>
-            </form>
-          )}
-
-          {/* Step 2: OTP */}
-          {step === 2 && (
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setErrors({}); }}
-                  placeholder="000000"
-                  className={`w-full border ${errors.otp ? 'border-red-400' : 'border-gray-300'} rounded-lg px-3 py-2 text-sm text-center text-2xl tracking-widest`}
-                  autoComplete="one-time-code"
-                />
-                {errors.otp && <p className="text-red-500 text-xs mt-1">{errors.otp}</p>}
-              </div>
-              <button
-                type="submit"
-                disabled={loading || otp.length !== 6}
-                className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Verifying...' : 'Verify Code'}
-              </button>
-
-              <div className="text-center">
-                {otpCountdown > 0 ? (
-                  <p className="text-xs text-gray-400">Resend in {otpCountdown}s</p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSendOtp}
-                    disabled={loading}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    Resend code
-                  </button>
-                )}
-              </div>
-            </form>
-          )}
-
-          {/* Step 3: Registration Form */}
-          {step === 3 && (
-            <form onSubmit={handleRegister} className="space-y-4">
+            <form onSubmit={handleContinue} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
                 <input
@@ -284,6 +235,30 @@ export default function RegisterPage() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => updateField('email', e.target.value)}
+                  placeholder="merchant@example.com"
+                  className={`w-full border ${errors.email ? 'border-red-400' : 'border-gray-300'} rounded-lg px-3 py-2 text-sm`}
+                />
+                {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Number</label>
+                <input
+                  type="tel"
+                  value={form.whatsappNumber}
+                  onChange={(e) => updateField('whatsappNumber', e.target.value)}
+                  placeholder="+923001234567"
+                  className={`w-full border ${errors.whatsappNumber ? 'border-red-400' : 'border-gray-300'} rounded-lg px-3 py-2 text-sm`}
+                />
+                {errors.whatsappNumber && <p className="text-red-500 text-xs mt-1">{errors.whatsappNumber}</p>}
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
                 <input
                   type="password"
@@ -305,24 +280,69 @@ export default function RegisterPage() {
                 {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
               </div>
 
-              <p className="text-xs text-gray-400 flex items-center gap-1">
-                <span>✅</span> Phone verified
-              </p>
-
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Creating store...' : 'Create Store'}
+                {loading ? 'Sending code...' : 'Continue'}
               </button>
+            </form>
+          )}
+
+          {/* Step 2: OTP */}
+          {step === 2 && (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                <p className="text-blue-700 text-sm">
+                  📧 Verification code sent to <strong>{form.email}</strong>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setErrors({}); }}
+                  placeholder="000000"
+                  className={`w-full border ${errors.otp ? 'border-red-400' : 'border-gray-300'} rounded-lg px-3 py-2 text-sm text-center text-2xl tracking-widest`}
+                  autoComplete="one-time-code"
+                />
+                {errors.otp && <p className="text-red-500 text-xs mt-1">{errors.otp}</p>}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || otp.length !== 6}
+                className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Verifying...' : 'Verify & Create Store'}
+              </button>
+
+              <div className="text-center">
+                {otpCountdown > 0 ? (
+                  <p className="text-xs text-gray-400">Resend in {otpCountdown}s</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={loading}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    Resend code
+                  </button>
+                )}
+              </div>
 
               <button
                 type="button"
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
                 className="w-full text-sm text-gray-500 hover:text-gray-700"
               >
-                ← Change phone number
+                ← Change details
               </button>
             </form>
           )}
