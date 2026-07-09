@@ -10,6 +10,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { initializeSocket } from './socket/index.js';
 import { startOrderExpiryCron } from './cron/orderExpiry.js';
 import { startOtpCleanup } from './services/otpService.js';
+import { verifyTransporter } from './services/emailService.js';
 import authRoutes from './routes/auth.js';
 import storeRoutes from './routes/store.js';
 import orderRoutes from './routes/orders.js';
@@ -54,13 +55,32 @@ startOtpCleanup();
 async function start() {
   try {
     await migrate();
-    console.log('Database migration complete');
+    console.log('[Boot] ✅ Database migration complete');
+
+    // SMTP / Email configuration check
+    if (config.email.user && config.email.pass) {
+      console.log('[Boot] ✅ SMTP configuration detected —', config.email.user);
+      console.log('[Boot]    Verifying email credentials...');
+      try {
+        await verifyTransporter();
+      } catch (err) {
+        console.error('[Boot] ❌ Email configuration is invalid. Server will start but emails will fail.');
+        console.error('[Boot]    Fix the SMTP credentials in .env and restart.');
+      }
+    } else {
+      console.warn('[Boot] ⚠ No SMTP credentials configured.');
+      console.warn('[Boot]    Emails will be logged to console only.');
+      if (config.isProduction) {
+        console.warn('[Boot]    ❌ PRODUCTION MODE: Set EMAIL_USER and EMAIL_PASS in .env');
+      }
+    }
 
     server.listen(config.port, () => {
-      console.log(`Server running on port ${config.port} (${config.nodeEnv})`);
+      console.log(`[Boot] ✅ Server running on port ${config.port} (${config.nodeEnv})`);
+      console.log(`[Boot]    Frontend URL: ${config.frontendUrl}`);
     });
   } catch (err) {
-    console.error('Failed to start server:', err.message);
+    console.error('[Boot] ❌ Failed to start server:', err.message);
     process.exit(1);
   }
 }

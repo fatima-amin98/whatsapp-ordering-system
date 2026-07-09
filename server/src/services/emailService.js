@@ -7,7 +7,8 @@ let transporter = null;
 function getTransporter() {
   if (!transporter) {
     if (!config.email.user || !config.email.pass) {
-      console.warn('[Email] No SMTP credentials configured. Emails will be logged to console.');
+      console.warn('[Email] ⚠ No SMTP credentials configured. Emails will be logged to console.');
+      console.warn('[Email]   Set EMAIL_USER and EMAIL_PASS in .env to enable email sending.');
       return null;
     }
 
@@ -22,6 +23,32 @@ function getTransporter() {
     });
   }
   return transporter;
+}
+
+/**
+ * Verify SMTP connection. Call at startup to confirm credentials are valid.
+ * Resolves if the transporter is not configured (console-only mode).
+ * Rejects if SMTP credentials exist but authentication fails.
+ */
+export async function verifyTransporter() {
+  const t = getTransporter();
+  if (!t) return; // no-op when using console fallback
+
+  try {
+    await t.verify();
+    console.log('[Email] ✅ Gmail SMTP authenticated —', config.email.user);
+    console.log('[Email]   From:', config.email.from);
+    console.log('[Email]   Email service ready');
+  } catch (err) {
+    console.error('[Email] ❌ SMTP authentication failed.');
+    console.error('[Email]    Possible causes:');
+    console.error('[Email]    - Incorrect Gmail App Password');
+    console.error('[Email]    - 2FA not enabled on the Google account');
+    console.error('[Email]    - EMAIL_USER:', config.email.user);
+    console.error('[Email]    - Gmail blocked the sign-in attempt');
+    console.error('[Email]    Error:', err.message);
+    throw err;
+  }
 }
 
 // ─── HTML Templates ─────────────────────────────────────────────────
@@ -182,21 +209,21 @@ async function sendEmail({ to, subject, html }) {
   const t = getTransporter();
 
   if (!t) {
-    console.log(`[Email] Would send to=${to} subject="${subject}"`);
+    console.log(`[Email] 📋 Would send to=${to} subject="${subject}"`);
     return { sent: false, method: 'console' };
   }
 
   try {
     const info = await t.sendMail({
-      from: `"WhatsApp Store" <${config.email.from}>`,
+      from: config.email.from,
       to,
       subject,
       html,
     });
-    console.log(`[Email] Sent to ${to} (messageId: ${info.messageId})`);
+    console.log(`[Email] ✅ Sent to ${to} (messageId: ${info.messageId})`);
     return { sent: true, method: 'smtp', messageId: info.messageId };
   } catch (err) {
-    console.error(`[Email] Failed to send to ${to}:`, err.message);
+    console.error(`[Email] ❌ Failed to send to ${to}:`, err.message);
     throw err;
   }
 }

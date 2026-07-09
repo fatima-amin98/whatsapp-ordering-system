@@ -400,6 +400,7 @@ router.post('/forgot-password', async (req, res, next) => {
       maskedEmail: maskEmail(normalizedEmail),
       // Return full email so the frontend can use it for subsequent API calls
       email: normalizedEmail,
+      ...(config.isProduction ? {} : { devOtp: otp }),
     });
   } catch (err) {
     next(err);
